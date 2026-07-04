@@ -4,3 +4,19 @@ target/
 target
 .mooncakes/
 .moonagent/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+
+# Temporary files
+*.tmp
+*.log
