@@ -161,3 +161,8 @@ moon test
 
 - 项目地址：https://github.com/username/moonbit-mqtt
 - 问题反馈：通过 GitHub Issues
+- 邮件联系：[项目维护者邮箱]
+
+## 致谢
+
+感谢 MoonBit 团队提供的优秀编程语言和工具链支持。
