@@ -15,7 +15,7 @@ version = "0.1.0"
 
 readme = "README.md"
 
-repository = "https://github.com/username/moonbit-mqtt"
+repository = "https://github.com/zbhzs1/moonbit-mqtt"
 
 license = "Apache-2.0"
 
