@@ -2,6 +2,9 @@
 
 一个用于 MoonBit 编程语言的 MQTT 3.1.1 客户端实现，支持基本的发布/订阅功能。
 
+[![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
+[![MoonBit](https://img.shields.io/badge/MoonBit-0.1.0-orange.svg)](https://moonbitlang.com)
+
 ## 项目简介
 
 MoonBit MQTT 是一个轻量级的 MQTT 客户端库，为 MoonBit 生态系统提供物联网消息通信能力。该项目实现了 MQTT 3.1.1 协议的核心功能，包括连接管理、消息发布、主题订阅等。
