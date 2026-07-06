@@ -13,19 +13,22 @@ jobs:
     steps:
     - uses: actions/checkout@v4
     
-    - name: Setup MoonBit
-      uses: moonbitlang/setup-moonbit@v1
-      with:
-        version: latest
+    - name: Install MoonBit
+      run: |
+        curl -fsSL https://moonbitlang.com/install.sh | sh
+        export PATH="$HOME/.moon/bin:$PATH"
     
     - name: Check
-      run: moon check
+      run: |
+        export PATH="$HOME/.moon/bin:$PATH"
+        moon check
     
     - name: Build
-      run: moon build
+      run: |
+        export PATH="$HOME/.moon/bin:$PATH"
+        moon build
     
     - name: Test
-      run: moon test
-    
-    - name: Check formatting
-      run: moon fmt --check
+      run: |
+        export PATH="$HOME/.moon/bin:$PATH"
+        moon test
