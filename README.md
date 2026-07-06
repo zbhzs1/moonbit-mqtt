@@ -1,23 +1,23 @@
-# MoonBit MQTT 客户端库
+# MoonBit MQTT 协议编码器/解码器库
 
-一个用于 MoonBit 编程语言的 MQTT 3.1.1 客户端实现，支持基本的发布/订阅功能。
+一个用于 MoonBit 编程语言的 MQTT 3.1.1 协议编码器/解码器实现，提供MQTT消息的编码和解码功能。
 
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
 [![MoonBit](https://img.shields.io/badge/MoonBit-0.1.0-orange.svg)](https://moonbitlang.com)
 
 ## 项目简介
 
-MoonBit MQTT 是一个轻量级的 MQTT 客户端库，为 MoonBit 生态系统提供物联网消息通信能力。该项目实现了 MQTT 3.1.1 协议的核心功能，包括连接管理、消息发布、主题订阅等。
+MoonBit MQTT 协议库提供 MQTT 3.1.1 协议的完整编码和解码功能，为 MoonBit 生态系统提供构建物联网消息通信应用的基础组件。本项目实现了 MQTT 3.1.1 协议规范（OASIS标准）的核心数据结构和编解码逻辑，可作为构建完整MQTT客户端或服务器的基础。
 
-本项目遵循 MQTT 3.1.1 协议规范（OASIS标准），提供类型安全的API设计，充分利用MoonBit的强类型系统确保协议实现的正确性。
+本项目遵循 MQTT 3.1.1 协议规范，提供类型安全的API设计，充分利用MoonBit的强类型系统确保协议实现的正确性。
 
 ## 核心功能
 
-- **连接管理**：支持 MQTT broker 连接、断开连接
-- **消息发布**：支持 QoS 0 消息发布
-- **主题订阅**：支持主题订阅和取消订阅
-- **认证支持**：支持用户名/密码认证
-- **Keep-Alive**：可配置的心跳保持连接
+- **协议数据结构**：完整的MQTT 3.1.1消息类型和数据结构定义
+- **消息编码**：支持所有MQTT消息类型的编码（CONNECT、PUBLISH、SUBSCRIBE等）
+- **消息解码**：支持所有MQTT消息类型的解码（CONNACK、SUBACK等）
+- **QoS支持**：支持QoS 0、QoS 1、QoS 2的数据结构
+- **类型安全**：利用MoonBit类型系统确保协议正确性
 
 ## 安装方式
 
@@ -37,80 +37,57 @@ moon build
 
 ## 使用方法
 
-### 创建客户端
+### 编码CONNECT消息
 
 ```moonbit
-let client = Client::new("localhost", 1883, "test_client")
-```
-
-### 设置认证信息
-
-```moonbit
-let client = Client::new("localhost", 1883, "test_client")
-  |> Client::set_credentials("username", "password")
-```
-
-### 设置 Keep-Alive
-
-```moonbit
-let client = Client::new("localhost", 1883, "test_client")
-  |> Client::set_keep_alive(60)
-```
-
-### 连接到 Broker
-
-```moonbit
-let client = Client::new("localhost", 1883, "test_client")
-let result = client.connect()
-match result {
-  Ok(connected_client) => // 连接成功
-  Err(_) => // 连接失败
+let connect = {
+  client_id: "test_client",
+  username: Some("username"),
+  password: Some("password"),
+  will_topic: None,
+  will_message: None,
+  keep_alive: 60,
+  flags: {
+    username: true,
+    password: true,
+    will_retain: false,
+    will_qos: QoS0,
+    will_flag: false,
+    clean_session: true,
+  },
 }
+let packet = encode_connect(connect)
 ```
 
-### 发布消息
+### 编码PUBLISH消息
 
 ```moonbit
-let client = Client::new("localhost", 1883, "test_client")
-let connected_client = match client.connect() {
-  Ok(c) => c
-  Err(_) => abort("Connection failed")
+let publish = {
+  topic: "test/topic",
+  payload: "Hello MQTT".to_bytes(),
+  qos: QoS0,
+  message_id: None,
+  retain: false,
+  dup: false,
 }
-let payload = "Hello MQTT".to_bytes()
-let _ = connected_client.publish("test/topic", payload)
+let packet = encode_publish(publish)
 ```
 
-### 订阅主题
+### 解码CONNACK消息
 
 ```moonbit
-let client = Client::new("localhost", 1883, "test_client")
-let connected_client = match client.connect() {
-  Ok(c) => c
-  Err(_) => abort("Connection failed")
-}
-let _ = connected_client.subscribe("test/topic", QoS0)
+let connack_bytes = [0x20u8, 0x02u8, 0x00u8, 0x00u8]
+let connack = decode_connack(connack_bytes)
+// connack.return_code == ConnectionAccepted
 ```
 
-### 取消订阅
+### 解码SUBACK消息
 
 ```moonbit
-let client = Client::new("localhost", 1883, "test_client")
-let connected_client = match client.connect() {
-  Ok(c) => c
-  Err(_) => abort("Connection failed")
-}
-let _ = connected_client.unsubscribe("test/topic")
-```
-
-### 断开连接
-
-```moonbit
-let client = Client::new("localhost", 1883, "test_client")
-let connected_client = match client.connect() {
-  Ok(c) => c
-  Err(_) => abort("Connection failed")
-}
-let disconnected_client = connected_client.disconnect()
+let suback_bytes = [0x90u8, 0x03u8, 0x00u8, 0x01u8, 0x00u8]
+let suback = decode_suback(suback_bytes)
+// suback.message_id == 1
+// suback.return_codes == [SuccessQoS0]
 ```
 
 ## 测试
@@ -123,33 +100,31 @@ moon test
 
 ## 项目状态
 
-- ✅ 基础数据结构定义
-- ✅ 连接管理
-- ✅ 消息发布（QoS 0）
-- ✅ 主题订阅/取消订阅
-- ✅ 用户认证
-- ✅ Keep-Alive 支持
-- 🚧 QoS 1/2 支持（计划中）
-- 🚧 消息接收（计划中）
-- 🚧 Last Will 和 Testament（计划中）
+- ✅ MQTT 3.1.1 协议数据结构定义
+- ✅ 所有消息类型的编码功能
+- ✅ 所有消息类型的解码功能
+- ✅ QoS 0/1/2 数据结构支持
+- ✅ 完整的单元测试覆盖
+- 🚧 网络传输层集成（计划中）
+- 🚧 完整MQTT客户端实现（计划中）
 
 ## 技术特点
 
 - **纯 MoonBit 实现**：完全使用 MoonBit 编写，无外部依赖
 - **类型安全**：利用 MoonBit 的类型系统确保协议正确性
+- **协议完整**：支持 MQTT 3.1.1 规范的所有消息类型
 - **轻量级**：最小化依赖，适合嵌入式和 WebAssembly 环境
-- **可测试**：完整的单元测试覆盖
+- **可测试**：完整的单元测试覆盖编码解码逻辑
+- **基础组件**：可作为构建完整MQTT客户端/服务器的基础
 
 ## 开发计划
 
-- [ ] 完善 QoS 1 和 QoS 2 支持
-- [ ] 实现消息接收和回调机制
-- [ ] 添加 Last Will 和 Testament 支持
-- [ ] 支持 WebSocket 传输
-- [ ] 添加 TLS/SSL 加密支持
+- [ ] 添加网络传输层支持（TCP/WebSocket）
+- [ ] 实现完整的MQTT客户端状态机
+- [ ] 添加Last Will和 Testament支持
+- [ ] 添加TLS/SSL加密支持
 - [ ] 性能优化和基准测试
-- [ ] 添加更多MQTT协议特性支持
-- [ ] 完善错误处理和重连机制
+- [ ] 添加MQTT 5.0协议支持
 
 ## 许可证
 
