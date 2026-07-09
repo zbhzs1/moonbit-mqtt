@@ -9,7 +9,7 @@
 //   "moonbitlang/x@0.4.6",
 // }
 
-name = "username/moonbit-mqtt"
+name = "zbhzs1/moonbit-mqtt"
 
 version = "0.1.0"
 
@@ -19,8 +19,8 @@ repository = "https://github.com/zbhzs1/moonbit-mqtt"
 
 license = "Apache-2.0"
 
-keywords = ["mqtt", "iot", "messaging", "publish-subscribe", "protocol"]
+keywords = [ "mqtt", "iot", "codec", "protocol", "moonbit" ]
 
 preferred_target = "wasm-gc"
 
-description = "MQTT 3.1.1 client implementation for MoonBit with full protocol support"
+description = "MQTT 3.1.1 packet codec helpers for MoonBit without transport or client runtime"

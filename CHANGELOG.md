@@ -1,36 +1,24 @@
 # Changelog
 
-All notable changes to this project will be documented in this file.
+## Unreleased
 
-The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
-and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+### Changed
 
-## [0.1.0] - 2026-07-04
+- Re-scoped the project from an MQTT client-style API to an MQTT 3.1.1 packet codec library.
+- Removed the previous `Client` API because it did not perform real network I/O.
+- Updated public metadata and documentation so they no longer claim MQTT client or protocol-stack support.
 
 ### Added
-- Initial MQTT 3.1.1 client implementation
-- Connection management (CONNECT/DISCONNECT)
-- Message publishing with QoS 0 support
-- Topic subscription and unsubscription
-- Username/password authentication
-- Keep-alive heartbeat mechanism
-- Message encoding and decoding for MQTT packets
-- Comprehensive unit test suite
-- CI/CD workflow with GitHub Actions
-- Complete README documentation
 
-### Technical Details
-- Pure MoonBit implementation with no external dependencies
-- Type-safe API using MoonBit's strong type system
-- Support for WebAssembly (wasm-gc) target
-- Full test coverage for core functionality
+- Byte-level Remaining Length, MQTT UTF-8 String, and MQTT Binary Data codecs.
+- Packet framing helpers and a generic packet decoder.
+- Public packet structures and helpers for CONNECT, CONNACK, PUBLISH, PUBACK, PUBREC, PUBREL, PUBCOMP, SUBSCRIBE, SUBACK, UNSUBSCRIBE, UNSUBACK, PINGREQ, PINGRESP, and DISCONNECT.
+- Strict decoding checks for fixed-header type/flags, packet body length, packet identifiers, CONNACK return code, SUBACK return code, CONNECT flags, and UTF-8 string validity.
+- 19 MoonBit tests covering supported packet helpers and malformed packet cases.
+- Generated package interface file from `moon info`.
 
-## [Unreleased]
+## 0.1.0 - 2026-07-04
 
-### Planned
-- QoS 1 and QoS 2 support
-- Message receiving and callback mechanism
-- Last Will and Testament support
-- WebSocket transport layer
-- TLS/SSL encrypted connections
-- Persistent session support
+### Added
+
+- Initial repository setup.

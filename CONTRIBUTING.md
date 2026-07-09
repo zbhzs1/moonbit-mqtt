@@ -1,43 +1,23 @@
-# Contributing to MoonBit MQTT
+# Contributing
 
-感谢你对 MoonBit MQTT 项目的关注！我们欢迎各种形式的贡献。
+Thank you for helping improve this MoonBit MQTT packet codec.
 
-## 如何贡献
+Before submitting a change, please run:
 
-### 报告问题
-如果你发现了bug或有功能建议，请通过 GitHub Issues 报告。
-
-### 提交代码
-1. Fork 本仓库
-2. 创建你的特性分支 (`git checkout -b feature/AmazingFeature`)
-3. 提交你的更改 (`git commit -m 'Add some AmazingFeature'`)
-4. 推送到分支 (`git push origin feature/AmazingFeature`)
-5. 开启一个 Pull Request
-
-### 代码规范
-- 遵循 MoonBit 代码风格指南
-- 为新功能添加测试
-- 更新相关文档
-- 确保所有测试通过
-
-### 开发环境
 ```bash
-# 安装 MoonBit
-# 参考: https://moonbitlang.com/download
-
-# 克隆仓库
-git clone https://github.com/username/moonbit-mqtt.git
-cd moonbit-mqtt
-
-# 运行测试
-moon test
-
-# 检查代码
+moon fmt
 moon check
-
-# 构建项目
-moon build
+moon test
 ```
 
-## 许可证
-通过贡献代码，你同意你的贡献将根据项目的 Apache-2.0 许可证进行许可。
+Scope rules:
+
+- Keep this package focused on MQTT 3.1.1 byte-level packet encoding and decoding.
+- Do not add network behavior or client APIs that return success without real I/O.
+- If a feature is only partially implemented, document the exact supported subset and add tests for it.
+- Update README tables and tests together when public behavior changes.
+
+Development notes:
+
+- `moon info` updates `pkg.generated.mbti`, the generated public interface.
+- Decoders in this package expect one complete MQTT packet in the input array. Stream framing belongs in a separate higher-level layer.
