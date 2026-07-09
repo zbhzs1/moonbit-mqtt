@@ -1360,6 +1360,26 @@ pub fn decode_disconnect(bytes : Array[Byte]) -> Result[Unit, String] {
 }
 
 ///|
+pub fn encode_packet(packet : Packet) -> Result[Array[Byte], String] {
+  match packet {
+    ConnectPacket(v) => encode_connect(v)
+    ConnackPacket(v) => encode_connack(v)
+    PublishPacket(v) => encode_publish(v)
+    PubackPacket(v) => encode_puback(v.message_id)
+    PubrecPacket(v) => encode_pubrec(v.message_id)
+    PubrelPacket(v) => encode_pubrel(v.message_id)
+    PubcompPacket(v) => encode_pubcomp(v.message_id)
+    SubscribePacket(v) => encode_subscribe(v)
+    SubackPacket(v) => encode_suback(v)
+    UnsubscribePacket(v) => encode_unsubscribe(v)
+    UnsubackPacket(v) => encode_unsuback(v.message_id)
+    PingreqPacket => encode_pingreq()
+    PingrespPacket => encode_pingresp()
+    DisconnectPacket => encode_disconnect()
+  }
+}
+
+///|
 pub fn decode_packet(bytes : Array[Byte]) -> Result[Packet, String] {
   let header = match decode_fixed_header(bytes) {
     Ok(v) => v

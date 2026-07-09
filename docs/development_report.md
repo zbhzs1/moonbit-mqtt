@@ -13,7 +13,7 @@ It does not implement network transport, an MQTT client runtime, broker sessions
 | Basic codecs | `encode_remaining_length`, `decode_remaining_length`, `encode_string`, `decode_string`, `encode_binary`, `decode_binary` |
 | Fixed header | `decode_fixed_header` plus per-packet type/flag/length checks |
 | Packet framing | `packet_total_length`, `has_complete_packet` |
-| Generic decoder | `decode_packet` and `Packet` |
+| Generic packet dispatch | `encode_packet`, `decode_packet`, and `Packet` |
 | Connection packets | `encode_connect`, `decode_connect`, `encode_connack`, `decode_connack` |
 | Publish packets | `encode_publish`, `decode_publish` for QoS 0/1/2 packet layout |
 | QoS acknowledgement packets | `encode_puback`, `decode_puback`, `encode_pubrec`, `decode_pubrec`, `encode_pubrel`, `decode_pubrel`, `encode_pubcomp`, `decode_pubcomp` |
@@ -32,15 +32,15 @@ moon check
 moon test
 ```
 
-Current test result: 19 tests passing.
+Current test result: 20 tests passing.
 
-The tests cover byte-level packet examples, UTF-8 decoding, binary payload preservation, packet framing helpers, generic packet decoding, CONNECT round trip with optional fields, CONNACK return code validation, PUBLISH QoS 0/1/2 packet layouts, QoS acknowledgement packet helpers, SUBSCRIBE and UNSUBSCRIBE packet bodies, SUBACK and UNSUBACK helpers, empty control packets, invalid fixed-header flags, and trailing-byte detection.
+The tests cover byte-level packet examples, UTF-8 decoding, binary payload preservation, packet framing helpers, generic packet encoding/decoding, CONNECT round trip with optional fields, CONNACK return code validation, PUBLISH QoS 0/1/2 packet layouts, QoS acknowledgement packet helpers, SUBSCRIBE and UNSUBSCRIBE packet bodies, SUBACK and UNSUBACK helpers, empty control packets, invalid fixed-header flags, and trailing-byte detection.
 
 ## Known Non-Goals
 
 - No TCP, WebSocket, TLS, or socket APIs.
-- No `Client::connect`, `publish`, `subscribe`, or `unsubscribe` methods.
-- No success-returning network stubs.
+- No client runtime APIs for connecting, publishing, subscribing, or unsubscribing.
+- No placeholder network behavior.
 - No automatic packet-id allocation.
 - No QoS resend queue, duplicate delivery handling, broker session state, retained message store, or callback system.
 - No MQTT 5.0 support.

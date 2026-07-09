@@ -52,6 +52,8 @@ pub fn encode_connect(Connect) -> Result[Array[Byte], String]
 
 pub fn encode_disconnect() -> Result[Array[Byte], String]
 
+pub fn encode_packet(Packet) -> Result[Array[Byte], String]
+
 pub fn encode_pingreq() -> Result[Array[Byte], String]
 
 pub fn encode_pingresp() -> Result[Array[Byte], String]

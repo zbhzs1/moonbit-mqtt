@@ -391,6 +391,40 @@ test "generic packet decoder dispatches by message type" {
 }
 
 ///|
+test "generic packet encoder dispatches packet variants" {
+  assert_true(expect_ok(encode_packet(PingreqPacket)) == [0xc0, 0x00])
+  assert_true(
+    expect_ok(encode_packet(PubackPacket({ message_id: 12 }))) ==
+    [0x40, 0x02, 0x00, 0x0c],
+  )
+  let encoded = expect_ok(
+    encode_packet(
+      PublishPacket({
+        topic: "a/b",
+        payload: b"msg",
+        qos: QoS1,
+        message_id: Some(5),
+        retain: false,
+        dup: true,
+      }),
+    ),
+  )
+  assert_true(
+    encoded ==
+    [0x3a, 0x0a, 0x00, 0x03, 0x61, 0x2f, 0x62, 0x00, 0x05, 0x6d, 0x73, 0x67],
+  )
+  match expect_ok(decode_packet(encoded)) {
+    PublishPacket(publish) => {
+      assert_true(publish.topic == "a/b")
+      assert_true(publish.payload == b"msg")
+      assert_true(publish.message_id == Some(5))
+      assert_true(publish.dup)
+    }
+    _ => abort("expected PUBLISH packet")
+  }
+}
+
+///|
 test "validation rejects malformed packet inputs" {
   assert_true(expect_err(encode_remaining_length(-1)).contains("range"))
   assert_true(expect_err(decode_remaining_length([], 0)).contains("missing"))
