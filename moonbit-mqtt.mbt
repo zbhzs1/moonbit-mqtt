@@ -1,8 +1,9 @@
-// MQTT 3.1.1 Client Implementation
-// https://docs.oasis-open.org/mqtt/mqtt/v3.1.1/os/mqtt-v3.1.1-os.html
+// MQTT 3.1.1 packet codec.
+// Scope: byte-level packet encode/decode helpers. This package does not
+// implement TCP/WebSocket transport, broker sessions, or MQTT client state.
 
-// MQTT Message Types
-pub enum MessageType {
+///|
+pub(all) enum MessageType {
   CONNECT
   CONNACK
   PUBLISH
@@ -19,24 +20,25 @@ pub enum MessageType {
   DISCONNECT
 } derive(Eq, Debug)
 
-// QoS Levels
-pub enum QoS {
-  QoS0 // At most once
-  QoS1 // At least once
-  QoS2 // Exactly once
+///|
+pub(all) enum QoS {
+  QoS0
+  QoS1
+  QoS2
 } derive(Eq, Debug)
 
-// Fixed Header
-pub struct FixedHeader {
+///|
+pub(all) struct FixedHeader {
   message_type : MessageType
   dup : Bool
   qos : QoS
   retain : Bool
   remaining_length : Int
+  header_len : Int
 } derive(Debug)
 
-// Connect Flags
-pub struct ConnectFlags {
+///|
+pub(all) struct ConnectFlags {
   username : Bool
   password : Bool
   will_retain : Bool
@@ -45,19 +47,19 @@ pub struct ConnectFlags {
   clean_session : Bool
 } derive(Debug)
 
-// Connect Message
-pub struct Connect {
+///|
+pub(all) struct Connect {
   client_id : String
   username : String?
-  password : String?
+  password : Bytes?
   will_topic : String?
-  will_message : String?
+  will_message : Bytes?
   keep_alive : Int
   flags : ConnectFlags
 } derive(Debug)
 
-// ConnACK Return Codes
-pub enum ConnackReturnCode {
+///|
+pub(all) enum ConnackReturnCode {
   ConnectionAccepted
   UnacceptableProtocolVersion
   IdentifierRejected
@@ -66,14 +68,14 @@ pub enum ConnackReturnCode {
   NotAuthorized
 } derive(Eq, Debug)
 
-// ConnACK Message
-pub struct Connack {
+///|
+pub(all) struct Connack {
   session_present : Bool
   return_code : ConnackReturnCode
 } derive(Debug)
 
-// Publish Message
-pub struct Publish {
+///|
+pub(all) struct Publish {
   topic : String
   payload : Bytes
   qos : QoS
@@ -82,146 +84,192 @@ pub struct Publish {
   dup : Bool
 } derive(Debug)
 
-// Subscribe Topic
-pub struct SubscribeTopic {
+///|
+pub(all) struct PacketId {
+  message_id : Int
+} derive(Debug)
+
+///|
+pub(all) struct SubscribeTopic {
   topic : String
   qos : QoS
 } derive(Debug)
 
-// Subscribe Message
-pub struct Subscribe {
+///|
+pub(all) struct Subscribe {
   topics : Array[SubscribeTopic]
   message_id : Int
 } derive(Debug)
 
-// SubACK Return Codes
-pub enum SubackReturnCode {
+///|
+pub(all) enum SubackReturnCode {
   SuccessQoS0
   SuccessQoS1
   SuccessQoS2
   Failure
 } derive(Eq, Debug)
 
-// SubACK Message
-pub struct Suback {
+///|
+pub(all) struct Suback {
   message_id : Int
   return_codes : Array[SubackReturnCode]
 } derive(Debug)
 
-// Unsubscribe Message
-pub struct Unsubscribe {
+///|
+pub(all) struct Unsubscribe {
   topics : Array[String]
   message_id : Int
 } derive(Debug)
 
-// UnsubACK Message
-pub struct Unsuback {
+///|
+pub(all) struct Unsuback {
   message_id : Int
 } derive(Debug)
 
-// MQTT Client
-pub struct Client {
-  host : String
-  port : Int
-  client_id : String
-  username : String?
-  password : String?
-  keep_alive : Int
-  connected : Bool
-  message_id : Int
-} derive(Debug)
-
-// Create a new MQTT client
-pub fn Client::new(host : String, port : Int, client_id : String) -> Client {
-  {
-    host: host,
-    port: port,
-    client_id: client_id,
-    username: None,
-    password: None,
-    keep_alive: 60,
-    connected: false,
-    message_id: 0,
+///|
+fn append_all(out : Array[Byte], bytes : Array[Byte]) -> Unit {
+  for b in bytes {
+    out.push(b)
   }
 }
 
-// Set username and password
-pub fn Client::set_credentials(self : Client, username : String, password : String) -> Client {
-  {
-    host: self.host,
-    port: self.port,
-    client_id: self.client_id,
-    username: Some(username),
-    password: Some(password),
-    keep_alive: self.keep_alive,
-    connected: self.connected,
-    message_id: self.message_id,
+///|
+fn append_bytes(out : Array[Byte], bytes : Bytes) -> Unit {
+  let arr = bytes.to_array()
+  for b in arr {
+    out.push(b)
   }
 }
 
-// Set keep alive interval
-pub fn Client::set_keep_alive(self : Client, keep_alive : Int) -> Client {
-  {
-    host: self.host,
-    port: self.port,
-    client_id: self.client_id,
-    username: self.username,
-    password: self.password,
-    keep_alive: keep_alive,
-    connected: self.connected,
-    message_id: self.message_id,
+///|
+fn slice_array(bytes : Array[Byte], start : Int, end : Int) -> Array[Byte] {
+  let out : Array[Byte] = []
+  let mut i = start
+  while i < end {
+    out.push(bytes[i])
+    i = i + 1
+  }
+  out
+}
+
+///|
+fn ensure_len(
+  bytes : Array[Byte],
+  offset : Int,
+  len : Int,
+  what : String,
+) -> Result[Unit, String] {
+  if offset < 0 {
+    Err("\{what}: negative offset")
+  } else if len < 0 {
+    Err("\{what}: negative length")
+  } else if offset + len > bytes.length() {
+    Err("\{what}: truncated packet")
+  } else {
+    Ok(())
   }
 }
 
-// Generate next message ID
-fn Client::next_message_id(self : Client) -> (Client, Int) {
-  let next_id = if self.message_id == 65535 { 1 } else { self.message_id + 1 }
-  ({
-    host: self.host,
-    port: self.port,
-    client_id: self.client_id,
-    username: self.username,
-    password: self.password,
-    keep_alive: self.keep_alive,
-    connected: self.connected,
-    message_id: next_id,
-  }, next_id)
-}
-
-// Encode remaining length using variable length encoding
-fn encode_remaining_length(length : Int) -> Array[Byte] {
-  let result : Array[Byte] = []
-  let mut x = length
-  while true {
-    let mut encoded_byte : Byte = (x % 128).to_byte()
-    x = x / 128
-    if x > 0 {
-      encoded_byte = encoded_byte | 0x80
-    }
-    result.push(encoded_byte)
-    if x == 0 { break }
+///|
+fn packet_body_bounds(
+  bytes : Array[Byte],
+  header : FixedHeader,
+  what : String,
+) -> Result[(Int, Int), String] {
+  let body_start = header.header_len
+  let body_end = body_start + header.remaining_length
+  match ensure_len(bytes, body_start, header.remaining_length, what) {
+    Err(e) => return Err(e)
+    Ok(_) => ()
   }
-  result
-}
-
-// Decode remaining length from bytes
-fn decode_remaining_length(bytes : Array[Byte]) -> (Int, Int) {
-  let mut multiplier = 1
-  let mut value = 0
-  let mut index = 0
-  while true {
-    let encoded_byte = bytes[index]
-    value = value + (encoded_byte & 0x7F).to_int() * multiplier
-    multiplier = multiplier * 128
-    index = index + 1
-    if (encoded_byte & 0x80) == 0 { break }
+  if body_end != bytes.length() {
+    Err("\{what}: trailing bytes")
+  } else {
+    Ok((body_start, body_end))
   }
-  (value, index)
 }
 
-// Encode message type to byte
-fn encode_message_type(msg_type : MessageType, dup : Bool, qos : QoS, retain : Bool) -> Byte {
-  let type_byte = (match msg_type {
+///|
+fn ensure_fixed_header(
+  header : FixedHeader,
+  msg_type : MessageType,
+  qos : QoS,
+  retain : Bool,
+  allow_dup : Bool,
+  what : String,
+) -> Result[Unit, String] {
+  if header.message_type != msg_type {
+    return Err("\{what}: invalid message type")
+  }
+  if header.qos != qos || header.retain != retain {
+    return Err("\{what}: invalid fixed header flags")
+  }
+  if !allow_dup && header.dup {
+    return Err("\{what}: invalid DUP flag")
+  }
+  Ok(())
+}
+
+///|
+fn ensure_packet_id(id : Int, what : String) -> Result[Unit, String] {
+  if id <= 0 || id > 65535 {
+    Err("\{what} packet identifier must be 1..65535")
+  } else {
+    Ok(())
+  }
+}
+
+///|
+fn validate_mqtt_string(value : String, what : String) -> Result[Unit, String] {
+  if value.contains_code_unit(0) {
+    Err("\{what}: MQTT string must not contain U+0000")
+  } else {
+    Ok(())
+  }
+}
+
+///|
+fn validate_publish_topic(topic : String) -> Result[Unit, String] {
+  if topic.is_empty() {
+    Err("PUBLISH topic must not be empty")
+  } else if topic.contains("#") || topic.contains("+") {
+    Err("PUBLISH topic must not contain wildcard characters")
+  } else {
+    Ok(())
+  }
+}
+
+///|
+fn validate_topic_filter(topic : String, what : String) -> Result[Unit, String] {
+  if topic.is_empty() {
+    Err("\{what} topic filter must not be empty")
+  } else {
+    Ok(())
+  }
+}
+
+///|
+fn qos_to_int(qos : QoS) -> Int {
+  match qos {
+    QoS0 => 0
+    QoS1 => 1
+    QoS2 => 2
+  }
+}
+
+///|
+fn int_to_qos(value : Int) -> Result[QoS, String] {
+  match value {
+    0 => Ok(QoS0)
+    1 => Ok(QoS1)
+    2 => Ok(QoS2)
+    _ => Err("invalid QoS level")
+  }
+}
+
+///|
+fn message_type_to_int(msg_type : MessageType) -> Int {
+  match msg_type {
     CONNECT => 1
     CONNACK => 2
     PUBLISH => 3
@@ -236,530 +284,1024 @@ fn encode_message_type(msg_type : MessageType, dup : Bool, qos : QoS, retain : B
     PINGREQ => 12
     PINGRESP => 13
     DISCONNECT => 14
-  })
-
-  let qos_byte = match qos {
-    QoS0 => 0
-    QoS1 => 1
-    QoS2 => 2
   }
-
-  let dup_byte = if dup { 1 } else { 0 }
-  let retain_byte = if retain { 1 } else { 0 }
-
-  ((type_byte * 16) + (dup_byte * 8) + (qos_byte * 2) + retain_byte).to_byte()
 }
 
-// Decode message type from byte
-fn decode_message_type(byte : Byte) -> (MessageType, Bool, QoS, Bool) {
-  let type_val = (byte / 16).to_int()
-  let dup = (byte & 0x08) != 0
-  let qos_val = ((byte / 2) & 0x03).to_int()
-  let retain = (byte & 0x01) != 0
-
-  let msg_type = match type_val {
-    1 => CONNECT
-    2 => CONNACK
-    3 => PUBLISH
-    4 => PUBACK
-    5 => PUBREC
-    6 => PUBREL
-    7 => PUBCOMP
-    8 => SUBSCRIBE
-    9 => SUBACK
-    10 => UNSUBSCRIBE
-    11 => UNSUBACK
-    12 => PINGREQ
-    13 => PINGRESP
-    14 => DISCONNECT
-    _ => abort("Invalid message type")
+///|
+fn int_to_message_type(value : Int) -> Result[MessageType, String] {
+  match value {
+    1 => Ok(CONNECT)
+    2 => Ok(CONNACK)
+    3 => Ok(PUBLISH)
+    4 => Ok(PUBACK)
+    5 => Ok(PUBREC)
+    6 => Ok(PUBREL)
+    7 => Ok(PUBCOMP)
+    8 => Ok(SUBSCRIBE)
+    9 => Ok(SUBACK)
+    10 => Ok(UNSUBSCRIBE)
+    11 => Ok(UNSUBACK)
+    12 => Ok(PINGREQ)
+    13 => Ok(PINGRESP)
+    14 => Ok(DISCONNECT)
+    _ => Err("invalid MQTT message type")
   }
-
-  let qos = match qos_val {
-    0 => QoS0
-    1 => QoS1
-    2 => QoS2
-    _ => abort("Invalid QoS level")
-  }
-
-  (msg_type, dup, qos, retain)
 }
 
-// Encode string with 2-byte length prefix
-fn encode_string(s : String) -> Array[Byte] {
-  let bytes = s.to_bytes()
+///|
+fn fixed_header_byte(
+  msg_type : MessageType,
+  dup : Bool,
+  qos : QoS,
+  retain : Bool,
+) -> Byte {
+  let dup_bit = if dup { 0x08 } else { 0 }
+  let retain_bit = if retain { 0x01 } else { 0 }
+  (message_type_to_int(msg_type) * 16 +
+  dup_bit +
+  qos_to_int(qos) * 2 +
+  retain_bit).to_byte()
+}
+
+///|
+pub fn encode_remaining_length(length : Int) -> Result[Array[Byte], String] {
+  if length < 0 || length > 268435455 {
+    return Err("remaining length out of MQTT 3.1.1 range")
+  }
+  let out : Array[Byte] = []
+  let mut x = length
+  while true {
+    let mut encoded : Byte = (x % 128).to_byte()
+    x = x / 128
+    if x > 0 {
+      encoded = encoded | 0x80
+    }
+    out.push(encoded)
+    if x == 0 {
+      break
+    }
+  }
+  Ok(out)
+}
+
+///|
+pub fn decode_remaining_length(
+  bytes : Array[Byte],
+  offset : Int,
+) -> Result[(Int, Int), String] {
+  if offset < 0 || offset >= bytes.length() {
+    return Err("remaining length: missing first byte")
+  }
+  let mut multiplier = 1
+  let mut value = 0
+  let mut index = offset
+  let mut encoded_count = 0
+  while true {
+    if index >= bytes.length() {
+      return Err("remaining length: truncated sequence")
+    }
+    let encoded = bytes[index]
+    value = value + (encoded & 0x7F).to_int() * multiplier
+    encoded_count = encoded_count + 1
+    index = index + 1
+    if encoded_count > 4 {
+      return Err("remaining length: malformed sequence")
+    }
+    if (encoded & 0x80) == 0 {
+      return Ok((value, index))
+    }
+    multiplier = multiplier * 128
+  }
+  Err("remaining length: malformed sequence")
+}
+
+///|
+pub fn encode_string(value : String) -> Result[Array[Byte], String] {
+  match validate_mqtt_string(value, "MQTT string") {
+    Err(e) => return Err(e)
+    Ok(_) => ()
+  }
+  let bytes = @utf8.encode(value)
   let len = bytes.length()
-  let result : Array[Byte] = []
-  result.push(((len >> 8) & 0xFF).to_byte())
-  result.push((len & 0xFF).to_byte())
-  let mut i = 0
-  while i < len {
-    result.push(bytes[i])
-    i = i + 1
+  if len > 65535 {
+    return Err("MQTT string exceeds 65535 bytes")
   }
-  result
+  let out : Array[Byte] = []
+  out.push(((len >> 8) & 0xFF).to_byte())
+  out.push((len & 0xFF).to_byte())
+  append_bytes(out, bytes)
+  Ok(out)
 }
 
-// Decode string with 2-byte length prefix
-fn decode_string(bytes : Array[Byte], offset : Int) -> (String, Int) {
-  let len = ((bytes[offset].to_int() << 8) | bytes[offset + 1].to_int())
-  let _str_bytes : Array[Byte] = []
-  let _i = 0
-  // TODO: Find correct method to convert bytes to string
-  ("", offset + 2 + len)
+///|
+pub fn decode_string(
+  bytes : Array[Byte],
+  offset : Int,
+) -> Result[(String, Int), String] {
+  match ensure_len(bytes, offset, 2, "MQTT string length") {
+    Err(e) => return Err(e)
+    Ok(_) => ()
+  }
+  let len = (bytes[offset].to_int() << 8) | bytes[offset + 1].to_int()
+  let start = offset + 2
+  match ensure_len(bytes, start, len, "MQTT string body") {
+    Err(e) => return Err(e)
+    Ok(_) => ()
+  }
+  let raw = Bytes::from_array(slice_array(bytes, start, start + len))
+  let decoded : Result[String, String] = try @utf8.decode(raw) |> Ok catch {
+    Malformed(_) => Err("MQTT string body: invalid UTF-8")
+  }
+  match decoded {
+    Ok(value) =>
+      match validate_mqtt_string(value, "MQTT string body") {
+        Err(e) => Err(e)
+        Ok(_) => Ok((value, start + len))
+      }
+    Err(e) => Err(e)
+  }
 }
 
-// Encode CONNECT message
-fn encode_connect(connect : Connect) -> Array[Byte] {
-  let payload : Array[Byte] = []
-
-  // Protocol name "MQTT" (4 bytes)
-  let mqtt_bytes = encode_string("MQTT")
-  let mut i = 0
-  while i < mqtt_bytes.length() {
-    payload.push(mqtt_bytes[i])
-    i = i + 1
+///|
+pub fn encode_binary(value : Bytes) -> Result[Array[Byte], String] {
+  let len = value.length()
+  if len > 65535 {
+    return Err("MQTT binary data exceeds 65535 bytes")
   }
+  let out : Array[Byte] = []
+  out.push(((len >> 8) & 0xFF).to_byte())
+  out.push((len & 0xFF).to_byte())
+  append_bytes(out, value)
+  Ok(out)
+}
 
-  // Protocol level (4 for MQTT 3.1.1)
-  payload.push(4)
+///|
+pub fn decode_binary(
+  bytes : Array[Byte],
+  offset : Int,
+) -> Result[(Bytes, Int), String] {
+  match ensure_len(bytes, offset, 2, "MQTT binary length") {
+    Err(e) => return Err(e)
+    Ok(_) => ()
+  }
+  let len = (bytes[offset].to_int() << 8) | bytes[offset + 1].to_int()
+  let start = offset + 2
+  match ensure_len(bytes, start, len, "MQTT binary body") {
+    Err(e) => return Err(e)
+    Ok(_) => ()
+  }
+  Ok((Bytes::from_array(slice_array(bytes, start, start + len)), start + len))
+}
 
-  // Connect flags
-  let flags_byte : Byte = {
-    let mut byte : Byte = 0
-    if connect.flags.username { byte = byte | 0x80 }
-    if connect.flags.password { byte = byte | 0x40 }
-    if connect.flags.will_retain { byte = byte | 0x20 }
-    let will_qos = match connect.flags.will_qos {
-      QoS0 => 0
-      QoS1 => 1
-      QoS2 => 2
+///|
+pub fn decode_fixed_header(bytes : Array[Byte]) -> Result[FixedHeader, String] {
+  match ensure_len(bytes, 0, 2, "fixed header") {
+    Err(e) => return Err(e)
+    Ok(_) => ()
+  }
+  let first = bytes[0]
+  let type_id = (first / 16).to_int()
+  let msg_type = match int_to_message_type(type_id) {
+    Ok(v) => v
+    Err(e) => return Err(e)
+  }
+  let qos = match int_to_qos(((first / 2) & 0x03).to_int()) {
+    Ok(v) => v
+    Err(e) => return Err(e)
+  }
+  let remaining = match decode_remaining_length(bytes, 1) {
+    Ok(v) => v
+    Err(e) => return Err(e)
+  }
+  Ok({
+    message_type: msg_type,
+    dup: (first & 0x08) != 0,
+    qos,
+    retain: (first & 0x01) != 0,
+    remaining_length: remaining.0,
+    header_len: remaining.1,
+  })
+}
+
+///|
+fn append_fixed_header(
+  packet : Array[Byte],
+  msg_type : MessageType,
+  dup : Bool,
+  qos : QoS,
+  retain : Bool,
+  remaining_length : Int,
+) -> Result[Unit, String] {
+  packet.push(fixed_header_byte(msg_type, dup, qos, retain))
+  match encode_remaining_length(remaining_length) {
+    Ok(len_bytes) => {
+      append_all(packet, len_bytes)
+      Ok(())
     }
-    byte = byte | (will_qos << 3).to_byte()
-    if connect.flags.will_flag { byte = byte | 0x04 }
-    if connect.flags.clean_session { byte = byte | 0x02 }
-    byte
+    Err(e) => Err(e)
   }
-  payload.push(flags_byte)
+}
 
-  // Keep alive (2 bytes)
-  payload.push(((connect.keep_alive >> 8) & 0xFF).to_byte())
-  payload.push((connect.keep_alive & 0xFF).to_byte())
-
-  // Client ID
-  let client_id_bytes = encode_string(connect.client_id)
-  let mut j = 0
-  while j < client_id_bytes.length() {
-    payload.push(client_id_bytes[j])
-    j = j + 1
+///|
+fn validate_connect_flags(connect : Connect) -> Result[Unit, String] {
+  if connect.flags.username != (connect.username is Some(_)) {
+    return Err("CONNECT username flag does not match username field")
   }
+  if connect.flags.password != (connect.password is Some(_)) {
+    return Err("CONNECT password flag does not match password field")
+  }
+  if connect.flags.will_flag {
+    if connect.will_topic is None || connect.will_message is None {
+      return Err("CONNECT will flag requires will topic and will message")
+    }
+  } else {
+    if connect.will_topic is Some(_) || connect.will_message is Some(_) {
+      return Err("CONNECT will fields require will flag")
+    }
+    if connect.flags.will_retain || connect.flags.will_qos != QoS0 {
+      return Err(
+        "CONNECT will retain/QoS must be clear when will flag is false",
+      )
+    }
+  }
+  Ok(())
+}
 
-  // Will topic and message (if present)
+///|
+pub fn encode_connect(connect : Connect) -> Result[Array[Byte], String] {
+  if connect.keep_alive < 0 || connect.keep_alive > 65535 {
+    return Err("CONNECT keep_alive must fit in 16 bits")
+  }
+  match validate_connect_flags(connect) {
+    Err(e) => return Err(e)
+    Ok(_) => ()
+  }
+  let body : Array[Byte] = []
+  match encode_string("MQTT") {
+    Ok(v) => append_all(body, v)
+    Err(e) => return Err(e)
+  }
+  body.push(4)
+  let mut flags : Byte = 0
+  if connect.flags.username {
+    flags = flags | 0x80
+  }
+  if connect.flags.password {
+    flags = flags | 0x40
+  }
+  if connect.flags.will_retain {
+    flags = flags | 0x20
+  }
+  flags = flags | (qos_to_int(connect.flags.will_qos) << 3).to_byte()
+  if connect.flags.will_flag {
+    flags = flags | 0x04
+  }
+  if connect.flags.clean_session {
+    flags = flags | 0x02
+  }
+  body.push(flags)
+  body.push(((connect.keep_alive >> 8) & 0xFF).to_byte())
+  body.push((connect.keep_alive & 0xFF).to_byte())
+  match encode_string(connect.client_id) {
+    Ok(v) => append_all(body, v)
+    Err(e) => return Err(e)
+  }
   match connect.will_topic {
-    Some(topic) => {
-      let topic_bytes = encode_string(topic)
-      let mut j = 0
-      while j < topic_bytes.length() {
-        payload.push(topic_bytes[j])
-        j = j + 1
+    Some(topic) =>
+      match encode_string(topic) {
+        Ok(v) => append_all(body, v)
+        Err(e) => return Err(e)
       }
-      match connect.will_message {
-        Some(message) => {
-          let msg_bytes = encode_string(message)
-          let mut k = 0
-          while k < msg_bytes.length() {
-            payload.push(msg_bytes[k])
-            k = k + 1
-          }
-        }
-        None => ()
-      }
-    }
     None => ()
   }
-
-  // Username (if present)
+  match connect.will_message {
+    Some(message) =>
+      match encode_binary(message) {
+        Ok(v) => append_all(body, v)
+        Err(e) => return Err(e)
+      }
+    None => ()
+  }
   match connect.username {
-    Some(username) => {
-      let user_bytes = encode_string(username)
-      let mut j = 0
-      while j < user_bytes.length() {
-        payload.push(user_bytes[j])
-        j = j + 1
+    Some(username) =>
+      match encode_string(username) {
+        Ok(v) => append_all(body, v)
+        Err(e) => return Err(e)
       }
-    }
     None => ()
   }
-
-  // Password (if present)
   match connect.password {
-    Some(password) => {
-      let pass_bytes = encode_string(password)
-      let mut j = 0
-      while j < pass_bytes.length() {
-        payload.push(pass_bytes[j])
-        j = j + 1
+    Some(password) =>
+      match encode_binary(password) {
+        Ok(v) => append_all(body, v)
+        Err(e) => return Err(e)
       }
-    }
     None => ()
   }
-
-  // Build fixed header
   let packet : Array[Byte] = []
-  packet.push(encode_message_type(CONNECT, false, QoS0, false))
-  let len_bytes = encode_remaining_length(payload.length())
-  let mut j = 0
-  while j < len_bytes.length() {
-    packet.push(len_bytes[j])
-    j = j + 1
+  match
+    append_fixed_header(packet, CONNECT, false, QoS0, false, body.length()) {
+    Err(e) => return Err(e)
+    Ok(_) => ()
   }
-  let mut k = 0
-  while k < payload.length() {
-    packet.push(payload[k])
-    k = k + 1
-  }
-
-  packet
+  append_all(packet, body)
+  Ok(packet)
 }
 
-// Encode PUBLISH message (QoS 0 only for MVP)
-fn encode_publish(publish : Publish) -> Array[Byte] {
-  let payload : Array[Byte] = []
-
-  // Topic
-  let topic_bytes = encode_string(publish.topic)
-  let mut j = 0
-  while j < topic_bytes.length() {
-    payload.push(topic_bytes[j])
-    j = j + 1
+///|
+pub fn decode_connect(bytes : Array[Byte]) -> Result[Connect, String] {
+  let header = match decode_fixed_header(bytes) {
+    Ok(v) => v
+    Err(e) => return Err(e)
   }
-
-  // Message ID (only for QoS 1 and 2)
-  match publish.message_id {
-    Some(msg_id) => {
-      payload.push(((msg_id >> 8) & 0xFF).to_byte())
-      payload.push((msg_id & 0xFF).to_byte())
+  match ensure_fixed_header(header, CONNECT, QoS0, false, false, "CONNECT") {
+    Err(e) => return Err(e)
+    Ok(_) => ()
+  }
+  let bounds = match packet_body_bounds(bytes, header, "CONNECT body") {
+    Ok(v) => v
+    Err(e) => return Err(e)
+  }
+  let body_start = bounds.0
+  let body_end = bounds.1
+  let protocol = match decode_string(bytes, body_start) {
+    Ok(v) => v
+    Err(e) => return Err("CONNECT protocol name: \{e}")
+  }
+  if protocol.0 != "MQTT" {
+    return Err("CONNECT: protocol name must be MQTT")
+  }
+  let mut offset = protocol.1
+  match ensure_len(bytes, offset, 4, "CONNECT variable header") {
+    Err(e) => return Err(e)
+    Ok(_) => ()
+  }
+  if bytes[offset] != 4 {
+    return Err("CONNECT: protocol level must be 4")
+  }
+  let flags_byte = bytes[offset + 1]
+  if (flags_byte & 0x01) != 0 {
+    return Err("CONNECT: reserved flag bit must be 0")
+  }
+  let will_qos_bits = ((flags_byte >> 3) & 0x03).to_int()
+  if will_qos_bits == 3 {
+    return Err("CONNECT: invalid will QoS")
+  }
+  let flags = {
+    username: (flags_byte & 0x80) != 0,
+    password: (flags_byte & 0x40) != 0,
+    will_retain: (flags_byte & 0x20) != 0,
+    will_qos: match int_to_qos(will_qos_bits) {
+      Ok(v) => v
+      Err(e) => return Err(e)
+    },
+    will_flag: (flags_byte & 0x04) != 0,
+    clean_session: (flags_byte & 0x02) != 0,
+  }
+  if !flags.will_flag && (flags.will_retain || flags.will_qos != QoS0) {
+    return Err("CONNECT: will retain/QoS set without will flag")
+  }
+  let keep_alive = (bytes[offset + 2].to_int() << 8) |
+    bytes[offset + 3].to_int()
+  offset = offset + 4
+  let client_id = match decode_string(bytes, offset) {
+    Ok(v) => {
+      offset = v.1
+      v.0
     }
-    None => ()
+    Err(e) => return Err("CONNECT client id: \{e}")
   }
-
-  // Payload
-  let payload_array = publish.payload.to_array()
-  let mut j = 0
-  while j < payload_array.length() {
-    payload.push(payload_array[j])
-    j = j + 1
-  }
-
-  // Build fixed header
-  let packet : Array[Byte] = []
-  packet.push(encode_message_type(PUBLISH, publish.dup, publish.qos, publish.retain))
-  let len_bytes = encode_remaining_length(payload.length())
-  let mut j = 0
-  while j < len_bytes.length() {
-    packet.push(len_bytes[j])
-    j = j + 1
-  }
-  let mut k = 0
-  while k < payload.length() {
-    packet.push(payload[k])
-    k = k + 1
-  }
-
-  packet
-}
-
-// Encode SUBSCRIBE message
-fn encode_subscribe(subscribe : Subscribe) -> Array[Byte] {
-  let payload : Array[Byte] = []
-
-  // Message ID (2 bytes)
-  payload.push(((subscribe.message_id >> 8) & 0xFF).to_byte())
-  payload.push((subscribe.message_id & 0xFF).to_byte())
-
-  // Topics
-  for topic in subscribe.topics {
-    let topic_bytes = encode_string(topic.topic)
-    let mut j = 0
-    while j < topic_bytes.length() {
-      payload.push(topic_bytes[j])
-      j = j + 1
+  let will_topic = if flags.will_flag {
+    match decode_string(bytes, offset) {
+      Ok(v) => {
+        offset = v.1
+        Some(v.0)
+      }
+      Err(e) => return Err("CONNECT will topic: \{e}")
     }
-    let qos = match topic.qos {
-      QoS0 => 0
-      QoS1 => 1
-      QoS2 => 2
+  } else {
+    None
+  }
+  let will_message = if flags.will_flag {
+    match decode_binary(bytes, offset) {
+      Ok(v) => {
+        offset = v.1
+        Some(v.0)
+      }
+      Err(e) => return Err("CONNECT will message: \{e}")
     }
-    payload.push(qos.to_byte())
+  } else {
+    None
   }
-
-  // Build fixed header
-  let packet : Array[Byte] = []
-  packet.push(encode_message_type(SUBSCRIBE, false, QoS1, false))
-  let len_bytes = encode_remaining_length(payload.length())
-  let mut j = 0
-  while j < len_bytes.length() {
-    packet.push(len_bytes[j])
-    j = j + 1
-  }
-  let mut k = 0
-  while k < payload.length() {
-    packet.push(payload[k])
-    k = k + 1
-  }
-
-  packet
-}
-
-// Encode UNSUBSCRIBE message
-fn encode_unsubscribe(unsubscribe : Unsubscribe) -> Array[Byte] {
-  let payload : Array[Byte] = []
-
-  // Message ID (2 bytes)
-  payload.push(((unsubscribe.message_id >> 8) & 0xFF).to_byte())
-  payload.push((unsubscribe.message_id & 0xFF).to_byte())
-
-  // Topics
-  for topic in unsubscribe.topics {
-    let topic_bytes = encode_string(topic)
-    let mut j = 0
-    while j < topic_bytes.length() {
-      payload.push(topic_bytes[j])
-      j = j + 1
+  let username = if flags.username {
+    match decode_string(bytes, offset) {
+      Ok(v) => {
+        offset = v.1
+        Some(v.0)
+      }
+      Err(e) => return Err("CONNECT username: \{e}")
     }
+  } else {
+    None
   }
-
-  // Build fixed header
-  let packet : Array[Byte] = []
-  packet.push(encode_message_type(UNSUBSCRIBE, false, QoS1, false))
-  let len_bytes = encode_remaining_length(payload.length())
-  let mut j = 0
-  while j < len_bytes.length() {
-    packet.push(len_bytes[j])
-    j = j + 1
+  let password = if flags.password {
+    match decode_binary(bytes, offset) {
+      Ok(v) => {
+        offset = v.1
+        Some(v.0)
+      }
+      Err(e) => return Err("CONNECT password: \{e}")
+    }
+  } else {
+    None
   }
-  let mut k = 0
-  while k < payload.length() {
-    packet.push(payload[k])
-    k = k + 1
+  if offset != body_end {
+    return Err("CONNECT: payload length mismatch")
   }
-
-  packet
+  Ok({
+    client_id,
+    username,
+    password,
+    will_topic,
+    will_message,
+    keep_alive,
+    flags,
+  })
 }
 
-// Encode PINGREQ message
-fn encode_pingreq() -> Array[Byte] {
-  let packet : Array[Byte] = []
-  packet.push(encode_message_type(PINGREQ, false, QoS0, false))
-  packet.push(0) // Remaining length is 0
-  packet
+///|
+fn connack_code_to_byte(code : ConnackReturnCode) -> Byte {
+  match code {
+    ConnectionAccepted => 0
+    UnacceptableProtocolVersion => 1
+    IdentifierRejected => 2
+    ServerUnavailable => 3
+    BadUserNameOrPassword => 4
+    NotAuthorized => 5
+  }
 }
 
-// Encode DISCONNECT message
-fn encode_disconnect() -> Array[Byte] {
+///|
+pub fn encode_connack(connack : Connack) -> Result[Array[Byte], String] {
+  if connack.session_present && connack.return_code != ConnectionAccepted {
+    return Err("CONNACK session_present requires accepted return code")
+  }
+  let flags : Byte = if connack.session_present { 0x01 } else { 0x00 }
+  let body : Array[Byte] = [flags, connack_code_to_byte(connack.return_code)]
   let packet : Array[Byte] = []
-  packet.push(encode_message_type(DISCONNECT, false, QoS0, false))
-  packet.push(0) // Remaining length is 0
-  packet
+  match
+    append_fixed_header(packet, CONNACK, false, QoS0, false, body.length()) {
+    Err(e) => return Err(e)
+    Ok(_) => ()
+  }
+  append_all(packet, body)
+  Ok(packet)
 }
 
-// Decode CONNACK message
-fn decode_connack(bytes : Array[Byte]) -> Connack {
-  let session_present = (bytes[2] & 0x01) != 0
-  let return_code = match bytes[3] {
+///|
+pub fn decode_connack(bytes : Array[Byte]) -> Result[Connack, String] {
+  let header = match decode_fixed_header(bytes) {
+    Ok(v) => v
+    Err(e) => return Err(e)
+  }
+  match ensure_fixed_header(header, CONNACK, QoS0, false, false, "CONNACK") {
+    Err(e) => return Err(e)
+    Ok(_) => ()
+  }
+  if header.remaining_length != 2 {
+    return Err("CONNACK: invalid remaining length")
+  }
+  let bounds = match packet_body_bounds(bytes, header, "CONNACK body") {
+    Ok(v) => v
+    Err(e) => return Err(e)
+  }
+  let ack_flags = bytes[bounds.0]
+  if (ack_flags & 0xFE) != 0 {
+    return Err("CONNACK: invalid acknowledge flags")
+  }
+  let return_code = match bytes[bounds.0 + 1] {
     0 => ConnectionAccepted
     1 => UnacceptableProtocolVersion
     2 => IdentifierRejected
     3 => ServerUnavailable
     4 => BadUserNameOrPassword
     5 => NotAuthorized
-    _ => abort("Invalid CONNACK return code")
+    _ => return Err("CONNACK: invalid return code")
   }
-  { session_present: session_present, return_code: return_code }
+  if (ack_flags & 0x01) != 0 && return_code != ConnectionAccepted {
+    return Err("CONNACK: session present requires accepted return code")
+  }
+  Ok({ session_present: (ack_flags & 0x01) != 0, return_code })
 }
 
-// Decode PUBLISH message
-fn decode_publish(bytes : Array[Byte]) -> Publish {
-  let (_, dup, qos, retain) = decode_message_type(bytes[0])
-  let remaining_bytes : Array[Byte] = []
-  let _i = 1
-  let (_, header_len) = decode_remaining_length(remaining_bytes)
+///|
+pub fn encode_publish(publish : Publish) -> Result[Array[Byte], String] {
+  match validate_publish_topic(publish.topic) {
+    Err(e) => return Err(e)
+    Ok(_) => ()
+  }
+  if publish.qos == QoS0 && publish.message_id is Some(_) {
+    return Err("PUBLISH QoS0 must not include packet identifier")
+  }
+  if publish.qos != QoS0 && publish.message_id is None {
+    return Err("PUBLISH QoS1/QoS2 requires packet identifier")
+  }
+  let body : Array[Byte] = []
+  match encode_string(publish.topic) {
+    Ok(v) => append_all(body, v)
+    Err(e) => return Err(e)
+  }
+  match publish.message_id {
+    Some(id) => {
+      if id <= 0 || id > 65535 {
+        return Err("PUBLISH packet identifier must be 1..65535")
+      }
+      body.push(((id >> 8) & 0xFF).to_byte())
+      body.push((id & 0xFF).to_byte())
+    }
+    None => ()
+  }
+  append_bytes(body, publish.payload)
+  let packet : Array[Byte] = []
+  match
+    append_fixed_header(
+      packet,
+      PUBLISH,
+      publish.dup,
+      publish.qos,
+      publish.retain,
+      body.length(),
+    ) {
+    Err(e) => return Err(e)
+    Ok(_) => ()
+  }
+  append_all(packet, body)
+  Ok(packet)
+}
 
-  let mut offset = header_len + 1
-
-  // Decode topic
-  let (topic, new_offset) = decode_string(bytes, offset)
-  offset = new_offset
-
-  // Decode message ID (if QoS > 0)
-  let message_id = if qos != QoS0 {
-    let msg_id = ((bytes[offset].to_int() << 8) | bytes[offset + 1].to_int())
+///|
+pub fn decode_publish(bytes : Array[Byte]) -> Result[Publish, String] {
+  let header = match decode_fixed_header(bytes) {
+    Ok(v) => v
+    Err(e) => return Err(e)
+  }
+  if header.message_type != PUBLISH {
+    return Err("PUBLISH: invalid fixed header type")
+  }
+  let bounds = match packet_body_bounds(bytes, header, "PUBLISH body") {
+    Ok(v) => v
+    Err(e) => return Err(e)
+  }
+  let body_start = bounds.0
+  let body_end = bounds.1
+  let decoded_topic = match decode_string(bytes, body_start) {
+    Ok(v) => v
+    Err(e) => return Err("PUBLISH topic: \{e}")
+  }
+  let topic = decoded_topic.0
+  match validate_publish_topic(topic) {
+    Err(e) => return Err(e)
+    Ok(_) => ()
+  }
+  let mut offset = decoded_topic.1
+  let message_id = if header.qos != QoS0 {
+    match ensure_len(bytes, offset, 2, "PUBLISH packet identifier") {
+      Err(e) => return Err(e)
+      Ok(_) => ()
+    }
+    let id = (bytes[offset].to_int() << 8) | bytes[offset + 1].to_int()
+    match ensure_packet_id(id, "PUBLISH") {
+      Err(e) => return Err(e)
+      Ok(_) => ()
+    }
     offset = offset + 2
-    Some(msg_id)
+    Some(id)
   } else {
     None
   }
+  if offset > body_end {
+    return Err("PUBLISH: body is shorter than variable header")
+  }
+  Ok({
+    topic,
+    payload: Bytes::from_array(slice_array(bytes, offset, body_end)),
+    qos: header.qos,
+    message_id,
+    retain: header.retain,
+    dup: header.dup,
+  })
+}
 
-  // Decode payload
-  let payload_bytes : Array[Byte] = []
-  let _i = offset
-  let payload = Bytes::from_array(payload_bytes)
+///|
+fn encode_packet_id_only(
+  msg_type : MessageType,
+  id : Int,
+  qos : QoS,
+) -> Result[Array[Byte], String] {
+  match ensure_packet_id(id, "packet identifier") {
+    Err(e) => return Err(e)
+    Ok(_) => ()
+  }
+  let body : Array[Byte] = [((id >> 8) & 0xFF).to_byte(), (id & 0xFF).to_byte()]
+  let packet : Array[Byte] = []
+  match
+    append_fixed_header(packet, msg_type, false, qos, false, body.length()) {
+    Err(e) => return Err(e)
+    Ok(_) => ()
+  }
+  append_all(packet, body)
+  Ok(packet)
+}
 
-  {
-    topic: topic,
-    payload: payload,
-    qos: qos,
-    message_id: message_id,
-    retain: retain,
-    dup: dup,
+///|
+fn decode_packet_id_only(
+  bytes : Array[Byte],
+  msg_type : MessageType,
+  qos : QoS,
+  allow_dup : Bool,
+  what : String,
+) -> Result[PacketId, String] {
+  let header = match decode_fixed_header(bytes) {
+    Ok(v) => v
+    Err(e) => return Err(e)
+  }
+  match ensure_fixed_header(header, msg_type, qos, false, allow_dup, what) {
+    Err(e) => return Err(e)
+    Ok(_) => ()
+  }
+  if header.remaining_length != 2 {
+    return Err("\{what}: invalid remaining length")
+  }
+  let bounds = match packet_body_bounds(bytes, header, "\{what} body") {
+    Ok(v) => v
+    Err(e) => return Err(e)
+  }
+  let id = (bytes[bounds.0].to_int() << 8) | bytes[bounds.0 + 1].to_int()
+  match ensure_packet_id(id, what) {
+    Err(e) => return Err(e)
+    Ok(_) => ()
+  }
+  Ok({ message_id: id })
+}
+
+///|
+pub fn encode_puback(message_id : Int) -> Result[Array[Byte], String] {
+  encode_packet_id_only(PUBACK, message_id, QoS0)
+}
+
+///|
+pub fn decode_puback(bytes : Array[Byte]) -> Result[PacketId, String] {
+  decode_packet_id_only(bytes, PUBACK, QoS0, false, "PUBACK")
+}
+
+///|
+pub fn encode_pubrec(message_id : Int) -> Result[Array[Byte], String] {
+  encode_packet_id_only(PUBREC, message_id, QoS0)
+}
+
+///|
+pub fn decode_pubrec(bytes : Array[Byte]) -> Result[PacketId, String] {
+  decode_packet_id_only(bytes, PUBREC, QoS0, false, "PUBREC")
+}
+
+///|
+pub fn encode_pubrel(message_id : Int) -> Result[Array[Byte], String] {
+  encode_packet_id_only(PUBREL, message_id, QoS1)
+}
+
+///|
+pub fn decode_pubrel(bytes : Array[Byte]) -> Result[PacketId, String] {
+  decode_packet_id_only(bytes, PUBREL, QoS1, true, "PUBREL")
+}
+
+///|
+pub fn encode_pubcomp(message_id : Int) -> Result[Array[Byte], String] {
+  encode_packet_id_only(PUBCOMP, message_id, QoS0)
+}
+
+///|
+pub fn decode_pubcomp(bytes : Array[Byte]) -> Result[PacketId, String] {
+  decode_packet_id_only(bytes, PUBCOMP, QoS0, false, "PUBCOMP")
+}
+
+///|
+pub fn encode_subscribe(subscribe : Subscribe) -> Result[Array[Byte], String] {
+  if subscribe.message_id <= 0 || subscribe.message_id > 65535 {
+    return Err("SUBSCRIBE packet identifier must be 1..65535")
+  }
+  if subscribe.topics.length() == 0 {
+    return Err("SUBSCRIBE requires at least one topic")
+  }
+  let body : Array[Byte] = []
+  body.push(((subscribe.message_id >> 8) & 0xFF).to_byte())
+  body.push((subscribe.message_id & 0xFF).to_byte())
+  for topic in subscribe.topics {
+    match validate_topic_filter(topic.topic, "SUBSCRIBE") {
+      Err(e) => return Err(e)
+      Ok(_) => ()
+    }
+    match encode_string(topic.topic) {
+      Ok(v) => append_all(body, v)
+      Err(e) => return Err(e)
+    }
+    body.push(qos_to_int(topic.qos).to_byte())
+  }
+  let packet : Array[Byte] = []
+  match
+    append_fixed_header(packet, SUBSCRIBE, false, QoS1, false, body.length()) {
+    Err(e) => return Err(e)
+    Ok(_) => ()
+  }
+  append_all(packet, body)
+  Ok(packet)
+}
+
+///|
+pub fn decode_subscribe(bytes : Array[Byte]) -> Result[Subscribe, String] {
+  let header = match decode_fixed_header(bytes) {
+    Ok(v) => v
+    Err(e) => return Err(e)
+  }
+  match ensure_fixed_header(header, SUBSCRIBE, QoS1, false, true, "SUBSCRIBE") {
+    Err(e) => return Err(e)
+    Ok(_) => ()
+  }
+  if header.remaining_length < 5 {
+    return Err("SUBSCRIBE: invalid remaining length")
+  }
+  let bounds = match packet_body_bounds(bytes, header, "SUBSCRIBE body") {
+    Ok(v) => v
+    Err(e) => return Err(e)
+  }
+  let mut offset = bounds.0
+  let body_end = bounds.1
+  let id = (bytes[offset].to_int() << 8) | bytes[offset + 1].to_int()
+  match ensure_packet_id(id, "SUBSCRIBE") {
+    Err(e) => return Err(e)
+    Ok(_) => ()
+  }
+  offset = offset + 2
+  let topics : Array[SubscribeTopic] = []
+  while offset < body_end {
+    let decoded_topic = match decode_string(bytes, offset) {
+      Ok(v) => v
+      Err(e) => return Err("SUBSCRIBE topic: \{e}")
+    }
+    offset = decoded_topic.1
+    match ensure_len(bytes, offset, 1, "SUBSCRIBE requested QoS") {
+      Err(e) => return Err(e)
+      Ok(_) => ()
+    }
+    let qos = match int_to_qos(bytes[offset].to_int()) {
+      Ok(v) => v
+      Err(_) => return Err("SUBSCRIBE: invalid requested QoS")
+    }
+    match validate_topic_filter(decoded_topic.0, "SUBSCRIBE") {
+      Err(e) => return Err(e)
+      Ok(_) => ()
+    }
+    topics.push({ topic: decoded_topic.0, qos })
+    offset = offset + 1
+  }
+  if topics.length() == 0 {
+    return Err("SUBSCRIBE requires at least one topic")
+  }
+  Ok({ topics, message_id: id })
+}
+
+///|
+fn suback_code_to_byte(code : SubackReturnCode) -> Byte {
+  match code {
+    SuccessQoS0 => 0
+    SuccessQoS1 => 1
+    SuccessQoS2 => 2
+    Failure => 128
   }
 }
 
-// Decode SUBACK message
-fn decode_suback(bytes : Array[Byte]) -> Suback {
-  let message_id = ((bytes[2].to_int() << 8) | bytes[3].to_int())
-  let num_codes = bytes.length() - 4
-  let return_codes : Array[SubackReturnCode] = Array::make(num_codes, SuccessQoS0)
+///|
+pub fn encode_suback(suback : Suback) -> Result[Array[Byte], String] {
+  match ensure_packet_id(suback.message_id, "SUBACK") {
+    Err(e) => return Err(e)
+    Ok(_) => ()
+  }
+  if suback.return_codes.length() == 0 {
+    return Err("SUBACK requires at least one return code")
+  }
+  let body : Array[Byte] = [
+    ((suback.message_id >> 8) & 0xFF).to_byte(),
+    (suback.message_id & 0xFF).to_byte(),
+  ]
+  for code in suback.return_codes {
+    body.push(suback_code_to_byte(code))
+  }
+  let packet : Array[Byte] = []
+  match append_fixed_header(packet, SUBACK, false, QoS0, false, body.length()) {
+    Err(e) => return Err(e)
+    Ok(_) => ()
+  }
+  append_all(packet, body)
+  Ok(packet)
+}
 
-  let mut offset = 4
-  let mut i = 0
-  while offset < bytes.length() {
-    let code = match bytes[offset] {
+///|
+pub fn decode_suback(bytes : Array[Byte]) -> Result[Suback, String] {
+  let header = match decode_fixed_header(bytes) {
+    Ok(v) => v
+    Err(e) => return Err(e)
+  }
+  match ensure_fixed_header(header, SUBACK, QoS0, false, false, "SUBACK") {
+    Err(e) => return Err(e)
+    Ok(_) => ()
+  }
+  if header.remaining_length < 3 {
+    return Err("SUBACK: invalid remaining length")
+  }
+  let bounds = match packet_body_bounds(bytes, header, "SUBACK body") {
+    Ok(v) => v
+    Err(e) => return Err(e)
+  }
+  let body_start = bounds.0
+  let id = (bytes[body_start].to_int() << 8) | bytes[body_start + 1].to_int()
+  match ensure_packet_id(id, "SUBACK") {
+    Err(e) => return Err(e)
+    Ok(_) => ()
+  }
+  let codes : Array[SubackReturnCode] = []
+  let mut i = body_start + 2
+  let body_end = bounds.1
+  while i < body_end {
+    let code = match bytes[i] {
       0 => SuccessQoS0
       1 => SuccessQoS1
       2 => SuccessQoS2
       128 => Failure
-      _ => abort("Invalid SUBACK return code")
+      _ => return Err("SUBACK: invalid return code")
     }
-    return_codes[i] = code
-    offset = offset + 1
+    codes.push(code)
     i = i + 1
   }
-
-  { message_id: message_id, return_codes: return_codes }
+  Ok({ message_id: id, return_codes: codes })
 }
 
-// Decode UNSUBACK message
-fn decode_unsuback(bytes : Array[Byte]) -> Unsuback {
-  let message_id = ((bytes[2].to_int() << 8) | bytes[3].to_int())
-  { message_id: message_id }
+///|
+pub fn encode_unsubscribe(
+  unsubscribe : Unsubscribe,
+) -> Result[Array[Byte], String] {
+  if unsubscribe.message_id <= 0 || unsubscribe.message_id > 65535 {
+    return Err("UNSUBSCRIBE packet identifier must be 1..65535")
+  }
+  if unsubscribe.topics.length() == 0 {
+    return Err("UNSUBSCRIBE requires at least one topic")
+  }
+  let body : Array[Byte] = []
+  body.push(((unsubscribe.message_id >> 8) & 0xFF).to_byte())
+  body.push((unsubscribe.message_id & 0xFF).to_byte())
+  for topic in unsubscribe.topics {
+    match validate_topic_filter(topic, "UNSUBSCRIBE") {
+      Err(e) => return Err(e)
+      Ok(_) => ()
+    }
+    match encode_string(topic) {
+      Ok(v) => append_all(body, v)
+      Err(e) => return Err(e)
+    }
+  }
+  let packet : Array[Byte] = []
+  match
+    append_fixed_header(packet, UNSUBSCRIBE, false, QoS1, false, body.length()) {
+    Err(e) => return Err(e)
+    Ok(_) => ()
+  }
+  append_all(packet, body)
+  Ok(packet)
 }
 
-// Connect to MQTT broker (synchronous for MVP)
-pub fn Client::connect(self : Client) -> Result[Client, String] {
-  // Build CONNECT message
-  let connect = {
-    client_id: self.client_id,
-    username: self.username,
-    password: self.password,
-    will_topic: None,
-    will_message: None,
-    keep_alive: self.keep_alive,
-    flags: {
-      username: self.username is Some(_),
-      password: self.password is Some(_),
-      will_retain: false,
-      will_qos: QoS0,
-      will_flag: false,
-      clean_session: true,
-    },
+///|
+pub fn decode_unsubscribe(bytes : Array[Byte]) -> Result[Unsubscribe, String] {
+  let header = match decode_fixed_header(bytes) {
+    Ok(v) => v
+    Err(e) => return Err(e)
   }
-
-  let _packet = encode_connect(connect)
-
-  // For MVP, we'll return success without actual network connection
-  // In a full implementation, this would:
-  // 1. Establish TCP connection to self.host:self.port
-  // 2. Send the CONNECT packet
-  // 3. Wait for CONNACK response
-  // 4. Parse CONNACK and check return code
-  // 5. Return error if connection failed
-
-  Ok({ connected: true, host: self.host, port: self.port, client_id: self.client_id, username: self.username, password: self.password, keep_alive: self.keep_alive, message_id: self.message_id })
+  match
+    ensure_fixed_header(header, UNSUBSCRIBE, QoS1, false, true, "UNSUBSCRIBE") {
+    Err(e) => return Err(e)
+    Ok(_) => ()
+  }
+  if header.remaining_length < 5 {
+    return Err("UNSUBSCRIBE: invalid remaining length")
+  }
+  let bounds = match packet_body_bounds(bytes, header, "UNSUBSCRIBE body") {
+    Ok(v) => v
+    Err(e) => return Err(e)
+  }
+  let mut offset = bounds.0
+  let body_end = bounds.1
+  let id = (bytes[offset].to_int() << 8) | bytes[offset + 1].to_int()
+  match ensure_packet_id(id, "UNSUBSCRIBE") {
+    Err(e) => return Err(e)
+    Ok(_) => ()
+  }
+  offset = offset + 2
+  let topics : Array[String] = []
+  while offset < body_end {
+    let decoded_topic = match decode_string(bytes, offset) {
+      Ok(v) => v
+      Err(e) => return Err("UNSUBSCRIBE topic: \{e}")
+    }
+    match validate_topic_filter(decoded_topic.0, "UNSUBSCRIBE") {
+      Err(e) => return Err(e)
+      Ok(_) => ()
+    }
+    topics.push(decoded_topic.0)
+    offset = decoded_topic.1
+  }
+  if topics.length() == 0 {
+    return Err("UNSUBSCRIBE requires at least one topic")
+  }
+  Ok({ topics, message_id: id })
 }
 
-// Publish a message (QoS 0 only for MVP)
-pub fn Client::publish(self : Client, topic : String, payload : Bytes) -> Client {
-  if !self.connected {
-    abort("Client is not connected")
-  }
-
-  let publish = {
-    topic: topic,
-    payload: payload,
-    qos: QoS0,
-    message_id: None,
-    retain: false,
-    dup: false,
-  }
-
-  let _packet = encode_publish(publish)
-
-  // For MVP, we'll just encode the packet
-  // In a full implementation, this would send the packet over the network
-
-  self
+///|
+pub fn encode_unsuback(message_id : Int) -> Result[Array[Byte], String] {
+  encode_packet_id_only(UNSUBACK, message_id, QoS0)
 }
 
-// Subscribe to a topic
-pub fn Client::subscribe(self : Client, topic : String, qos : QoS) -> (Client, Int) {
-  if !self.connected {
-    abort("Client is not connected")
+///|
+pub fn decode_unsuback(bytes : Array[Byte]) -> Result[Unsuback, String] {
+  let id = match
+    decode_packet_id_only(bytes, UNSUBACK, QoS0, false, "UNSUBACK") {
+    Ok(v) => v
+    Err(e) => return Err(e)
   }
-
-  let (new_client, message_id) = self.next_message_id()
-
-  let subscribe : Subscribe = {
-    topics: [{ topic: topic, qos: qos }],
-    message_id: message_id,
-  }
-
-  let _packet = encode_subscribe(subscribe)
-
-  // For MVP, we'll just encode the packet
-  // In a full implementation, this would:
-  // 1. Send the SUBSCRIBE packet
-  // 2. Wait for SUBACK response
-  // 3. Parse SUBACK and check return codes
-
-  (new_client, message_id)
+  Ok({ message_id: id.message_id })
 }
 
-// Unsubscribe from a topic
-pub fn Client::unsubscribe(self : Client, topic : String) -> (Client, Int) {
-  if !self.connected {
-    abort("Client is not connected")
+///|
+fn encode_empty_packet(msg_type : MessageType) -> Result[Array[Byte], String] {
+  let packet : Array[Byte] = []
+  match append_fixed_header(packet, msg_type, false, QoS0, false, 0) {
+    Err(e) => Err(e)
+    Ok(_) => Ok(packet)
   }
-
-  let (new_client, message_id) = self.next_message_id()
-
-  let unsubscribe : Unsubscribe = {
-    topics: [topic],
-    message_id: message_id,
-  }
-
-  let _packet = encode_unsubscribe(unsubscribe)
-
-  // For MVP, we'll just encode the packet
-  // In a full implementation, this would:
-  // 1. Send the UNSUBSCRIBE packet
-  // 2. Wait for UNSUBACK response
-
-  (new_client, message_id)
 }
 
-// Disconnect from broker
-pub fn Client::disconnect(self : Client) -> Client {
-  if !self.connected {
-    abort("Client is not connected")
+///|
+fn decode_empty_packet(
+  bytes : Array[Byte],
+  msg_type : MessageType,
+  what : String,
+) -> Result[Unit, String] {
+  let header = match decode_fixed_header(bytes) {
+    Ok(v) => v
+    Err(e) => return Err(e)
   }
+  match ensure_fixed_header(header, msg_type, QoS0, false, false, what) {
+    Err(e) => return Err(e)
+    Ok(_) => ()
+  }
+  if header.remaining_length != 0 {
+    return Err("\{what}: remaining length must be 0")
+  }
+  match packet_body_bounds(bytes, header, "\{what} body") {
+    Err(e) => Err(e)
+    Ok(_) => Ok(())
+  }
+}
 
-  let _packet = encode_disconnect()
+///|
+pub fn encode_pingreq() -> Result[Array[Byte], String] {
+  encode_empty_packet(PINGREQ)
+}
 
-  // For MVP, we'll just encode the packet
-  // In a full implementation, this would:
-  // 1. Send the DISCONNECT packet
-  // 2. Close the TCP connection
+///|
+pub fn decode_pingreq(bytes : Array[Byte]) -> Result[Unit, String] {
+  decode_empty_packet(bytes, PINGREQ, "PINGREQ")
+}
 
-  { connected: false, host: self.host, port: self.port, client_id: self.client_id, username: self.username, password: self.password, keep_alive: self.keep_alive, message_id: self.message_id }
+///|
+pub fn encode_pingresp() -> Result[Array[Byte], String] {
+  encode_empty_packet(PINGRESP)
+}
+
+///|
+pub fn decode_pingresp(bytes : Array[Byte]) -> Result[Unit, String] {
+  decode_empty_packet(bytes, PINGRESP, "PINGRESP")
+}
+
+///|
+pub fn encode_disconnect() -> Result[Array[Byte], String] {
+  encode_empty_packet(DISCONNECT)
+}
+
+///|
+pub fn decode_disconnect(bytes : Array[Byte]) -> Result[Unit, String] {
+  decode_empty_packet(bytes, DISCONNECT, "DISCONNECT")
+}
+
+///|
+pub fn is_pingresp(bytes : Array[Byte]) -> Bool {
+  bytes.length() == 2 &&
+  bytes[0] == fixed_header_byte(PINGRESP, false, QoS0, false) &&
+  bytes[1] == 0
 }

@@ -1,0 +1,196 @@
+// Generated using `moon info`, DON'T EDIT IT
+package "zbhzs1/moonbit-mqtt"
+
+import {
+  "moonbitlang/core/debug",
+}
+
+// Values
+pub fn decode_binary(Array[Byte], Int) -> Result[(Bytes, Int), String]
+
+pub fn decode_connack(Array[Byte]) -> Result[Connack, String]
+
+pub fn decode_connect(Array[Byte]) -> Result[Connect, String]
+
+pub fn decode_disconnect(Array[Byte]) -> Result[Unit, String]
+
+pub fn decode_fixed_header(Array[Byte]) -> Result[FixedHeader, String]
+
+pub fn decode_pingreq(Array[Byte]) -> Result[Unit, String]
+
+pub fn decode_pingresp(Array[Byte]) -> Result[Unit, String]
+
+pub fn decode_puback(Array[Byte]) -> Result[PacketId, String]
+
+pub fn decode_pubcomp(Array[Byte]) -> Result[PacketId, String]
+
+pub fn decode_publish(Array[Byte]) -> Result[Publish, String]
+
+pub fn decode_pubrec(Array[Byte]) -> Result[PacketId, String]
+
+pub fn decode_pubrel(Array[Byte]) -> Result[PacketId, String]
+
+pub fn decode_remaining_length(Array[Byte], Int) -> Result[(Int, Int), String]
+
+pub fn decode_string(Array[Byte], Int) -> Result[(String, Int), String]
+
+pub fn decode_suback(Array[Byte]) -> Result[Suback, String]
+
+pub fn decode_subscribe(Array[Byte]) -> Result[Subscribe, String]
+
+pub fn decode_unsuback(Array[Byte]) -> Result[Unsuback, String]
+
+pub fn decode_unsubscribe(Array[Byte]) -> Result[Unsubscribe, String]
+
+pub fn encode_binary(Bytes) -> Result[Array[Byte], String]
+
+pub fn encode_connack(Connack) -> Result[Array[Byte], String]
+
+pub fn encode_connect(Connect) -> Result[Array[Byte], String]
+
+pub fn encode_disconnect() -> Result[Array[Byte], String]
+
+pub fn encode_pingreq() -> Result[Array[Byte], String]
+
+pub fn encode_pingresp() -> Result[Array[Byte], String]
+
+pub fn encode_puback(Int) -> Result[Array[Byte], String]
+
+pub fn encode_pubcomp(Int) -> Result[Array[Byte], String]
+
+pub fn encode_publish(Publish) -> Result[Array[Byte], String]
+
+pub fn encode_pubrec(Int) -> Result[Array[Byte], String]
+
+pub fn encode_pubrel(Int) -> Result[Array[Byte], String]
+
+pub fn encode_remaining_length(Int) -> Result[Array[Byte], String]
+
+pub fn encode_string(String) -> Result[Array[Byte], String]
+
+pub fn encode_suback(Suback) -> Result[Array[Byte], String]
+
+pub fn encode_subscribe(Subscribe) -> Result[Array[Byte], String]
+
+pub fn encode_unsuback(Int) -> Result[Array[Byte], String]
+
+pub fn encode_unsubscribe(Unsubscribe) -> Result[Array[Byte], String]
+
+pub fn is_pingresp(Array[Byte]) -> Bool
+
+// Errors
+
+// Types and methods
+pub(all) struct Connack {
+  session_present : Bool
+  return_code : ConnackReturnCode
+} derive(@debug.Debug)
+
+pub(all) enum ConnackReturnCode {
+  ConnectionAccepted
+  UnacceptableProtocolVersion
+  IdentifierRejected
+  ServerUnavailable
+  BadUserNameOrPassword
+  NotAuthorized
+} derive(Eq, @debug.Debug)
+
+pub(all) struct Connect {
+  client_id : String
+  username : String?
+  password : Bytes?
+  will_topic : String?
+  will_message : Bytes?
+  keep_alive : Int
+  flags : ConnectFlags
+} derive(@debug.Debug)
+
+pub(all) struct ConnectFlags {
+  username : Bool
+  password : Bool
+  will_retain : Bool
+  will_qos : QoS
+  will_flag : Bool
+  clean_session : Bool
+} derive(@debug.Debug)
+
+pub(all) struct FixedHeader {
+  message_type : MessageType
+  dup : Bool
+  qos : QoS
+  retain : Bool
+  remaining_length : Int
+  header_len : Int
+} derive(@debug.Debug)
+
+pub(all) enum MessageType {
+  CONNECT
+  CONNACK
+  PUBLISH
+  PUBACK
+  PUBREC
+  PUBREL
+  PUBCOMP
+  SUBSCRIBE
+  SUBACK
+  UNSUBSCRIBE
+  UNSUBACK
+  PINGREQ
+  PINGRESP
+  DISCONNECT
+} derive(Eq, @debug.Debug)
+
+pub(all) struct PacketId {
+  message_id : Int
+} derive(@debug.Debug)
+
+pub(all) struct Publish {
+  topic : String
+  payload : Bytes
+  qos : QoS
+  message_id : Int?
+  retain : Bool
+  dup : Bool
+} derive(@debug.Debug)
+
+pub(all) enum QoS {
+  QoS0
+  QoS1
+  QoS2
+} derive(Eq, @debug.Debug)
+
+pub(all) struct Suback {
+  message_id : Int
+  return_codes : Array[SubackReturnCode]
+} derive(@debug.Debug)
+
+pub(all) enum SubackReturnCode {
+  SuccessQoS0
+  SuccessQoS1
+  SuccessQoS2
+  Failure
+} derive(Eq, @debug.Debug)
+
+pub(all) struct Subscribe {
+  topics : Array[SubscribeTopic]
+  message_id : Int
+} derive(@debug.Debug)
+
+pub(all) struct SubscribeTopic {
+  topic : String
+  qos : QoS
+} derive(@debug.Debug)
+
+pub(all) struct Unsuback {
+  message_id : Int
+} derive(@debug.Debug)
+
+pub(all) struct Unsubscribe {
+  topics : Array[String]
+  message_id : Int
+} derive(@debug.Debug)
+
+// Type aliases
+
+// Traits
+
