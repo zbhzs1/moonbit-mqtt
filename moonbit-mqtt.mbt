@@ -127,6 +127,24 @@ pub(all) struct Unsuback {
 } derive(Debug)
 
 ///|
+pub(all) enum Packet {
+  ConnectPacket(Connect)
+  ConnackPacket(Connack)
+  PublishPacket(Publish)
+  PubackPacket(PacketId)
+  PubrecPacket(PacketId)
+  PubrelPacket(PacketId)
+  PubcompPacket(PacketId)
+  SubscribePacket(Subscribe)
+  SubackPacket(Suback)
+  UnsubscribePacket(Unsubscribe)
+  UnsubackPacket(Unsuback)
+  PingreqPacket
+  PingrespPacket
+  DisconnectPacket
+} derive(Debug)
+
+///|
 fn append_all(out : Array[Byte], bytes : Array[Byte]) -> Unit {
   for b in bytes {
     out.push(b)
@@ -1339,6 +1357,86 @@ pub fn encode_disconnect() -> Result[Array[Byte], String] {
 ///|
 pub fn decode_disconnect(bytes : Array[Byte]) -> Result[Unit, String] {
   decode_empty_packet(bytes, DISCONNECT, "DISCONNECT")
+}
+
+///|
+pub fn decode_packet(bytes : Array[Byte]) -> Result[Packet, String] {
+  let header = match decode_fixed_header(bytes) {
+    Ok(v) => v
+    Err(e) => return Err(e)
+  }
+  match header.message_type {
+    CONNECT =>
+      match decode_connect(bytes) {
+        Ok(v) => Ok(ConnectPacket(v))
+        Err(e) => Err(e)
+      }
+    CONNACK =>
+      match decode_connack(bytes) {
+        Ok(v) => Ok(ConnackPacket(v))
+        Err(e) => Err(e)
+      }
+    PUBLISH =>
+      match decode_publish(bytes) {
+        Ok(v) => Ok(PublishPacket(v))
+        Err(e) => Err(e)
+      }
+    PUBACK =>
+      match decode_puback(bytes) {
+        Ok(v) => Ok(PubackPacket(v))
+        Err(e) => Err(e)
+      }
+    PUBREC =>
+      match decode_pubrec(bytes) {
+        Ok(v) => Ok(PubrecPacket(v))
+        Err(e) => Err(e)
+      }
+    PUBREL =>
+      match decode_pubrel(bytes) {
+        Ok(v) => Ok(PubrelPacket(v))
+        Err(e) => Err(e)
+      }
+    PUBCOMP =>
+      match decode_pubcomp(bytes) {
+        Ok(v) => Ok(PubcompPacket(v))
+        Err(e) => Err(e)
+      }
+    SUBSCRIBE =>
+      match decode_subscribe(bytes) {
+        Ok(v) => Ok(SubscribePacket(v))
+        Err(e) => Err(e)
+      }
+    SUBACK =>
+      match decode_suback(bytes) {
+        Ok(v) => Ok(SubackPacket(v))
+        Err(e) => Err(e)
+      }
+    UNSUBSCRIBE =>
+      match decode_unsubscribe(bytes) {
+        Ok(v) => Ok(UnsubscribePacket(v))
+        Err(e) => Err(e)
+      }
+    UNSUBACK =>
+      match decode_unsuback(bytes) {
+        Ok(v) => Ok(UnsubackPacket(v))
+        Err(e) => Err(e)
+      }
+    PINGREQ =>
+      match decode_pingreq(bytes) {
+        Ok(_) => Ok(PingreqPacket)
+        Err(e) => Err(e)
+      }
+    PINGRESP =>
+      match decode_pingresp(bytes) {
+        Ok(_) => Ok(PingrespPacket)
+        Err(e) => Err(e)
+      }
+    DISCONNECT =>
+      match decode_disconnect(bytes) {
+        Ok(_) => Ok(DisconnectPacket)
+        Err(e) => Err(e)
+      }
+  }
 }
 
 ///|

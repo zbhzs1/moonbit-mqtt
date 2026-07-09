@@ -16,6 +16,8 @@ pub fn decode_disconnect(Array[Byte]) -> Result[Unit, String]
 
 pub fn decode_fixed_header(Array[Byte]) -> Result[FixedHeader, String]
 
+pub fn decode_packet(Array[Byte]) -> Result[Packet, String]
+
 pub fn decode_pingreq(Array[Byte]) -> Result[Unit, String]
 
 pub fn decode_pingresp(Array[Byte]) -> Result[Unit, String]
@@ -143,6 +145,23 @@ pub(all) enum MessageType {
   PINGRESP
   DISCONNECT
 } derive(Eq, @debug.Debug)
+
+pub(all) enum Packet {
+  ConnectPacket(Connect)
+  ConnackPacket(Connack)
+  PublishPacket(Publish)
+  PubackPacket(PacketId)
+  PubrecPacket(PacketId)
+  PubrelPacket(PacketId)
+  PubcompPacket(PacketId)
+  SubscribePacket(Subscribe)
+  SubackPacket(Suback)
+  UnsubscribePacket(Unsubscribe)
+  UnsubackPacket(Unsuback)
+  PingreqPacket
+  PingrespPacket
+  DisconnectPacket
+} derive(@debug.Debug)
 
 pub(all) struct PacketId {
   message_id : Int

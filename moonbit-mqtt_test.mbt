@@ -369,6 +369,28 @@ test "puback and empty control packet helpers" {
 }
 
 ///|
+test "generic packet decoder dispatches by message type" {
+  match expect_ok(decode_packet([0xd0, 0x00])) {
+    PingrespPacket => ()
+    _ => abort("expected PINGRESP packet")
+  }
+  match expect_ok(decode_packet([0x62, 0x02, 0x00, 0x09])) {
+    PubrelPacket(id) => assert_true(id.message_id == 9)
+    _ => abort("expected PUBREL packet")
+  }
+  match
+    expect_ok(
+      decode_packet([0x30, 0x08, 0x00, 0x03, 0x61, 0x2f, 0x62, 0x6d, 0x73, 0x67]),
+    ) {
+    PublishPacket(publish) => {
+      assert_true(publish.topic == "a/b")
+      assert_true(publish.payload == b"msg")
+    }
+    _ => abort("expected PUBLISH packet")
+  }
+}
+
+///|
 test "validation rejects malformed packet inputs" {
   assert_true(expect_err(encode_remaining_length(-1)).contains("range"))
   assert_true(expect_err(decode_remaining_length([], 0)).contains("missing"))
