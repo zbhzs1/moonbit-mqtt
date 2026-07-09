@@ -20,4 +20,4 @@ Scope rules:
 Development notes:
 
 - `moon info` updates `pkg.generated.mbti`, the generated public interface.
-- Decoders in this package expect one complete MQTT packet in the input array. Stream framing belongs in a separate higher-level layer.
+- Decoders in this package expect one already-buffered MQTT packet in the input array. Stream framing belongs in a separate higher-level layer.
