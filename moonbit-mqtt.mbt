@@ -242,10 +242,30 @@ fn validate_publish_topic(topic : String) -> Result[Unit, String] {
 ///|
 fn validate_topic_filter(topic : String, what : String) -> Result[Unit, String] {
   if topic.is_empty() {
-    Err("\{what} topic filter must not be empty")
-  } else {
-    Ok(())
+    return Err("\{what} topic filter must not be empty")
   }
+  let bytes = @utf8.encode(topic).to_array()
+  let mut i = 0
+  while i < bytes.length() {
+    let b = bytes[i]
+    if b == 0x23 {
+      if i != bytes.length() - 1 {
+        return Err("\{what} multi-level wildcard must be the last level")
+      }
+      if i > 0 && bytes[i - 1] != 0x2f {
+        return Err("\{what} multi-level wildcard must occupy a whole level")
+      }
+    } else if b == 0x2b {
+      if i > 0 && bytes[i - 1] != 0x2f {
+        return Err("\{what} single-level wildcard must occupy a whole level")
+      }
+      if i + 1 < bytes.length() && bytes[i + 1] != 0x2f {
+        return Err("\{what} single-level wildcard must occupy a whole level")
+      }
+    }
+    i = i + 1
+  }
+  Ok(())
 }
 
 ///|

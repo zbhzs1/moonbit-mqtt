@@ -264,6 +264,16 @@ test "subscribe and unsubscribe encode packets with MQTT required flags" {
   assert_true(
     unsubscribe == [0xa2, 0x07, 0x00, 0x0a, 0x00, 0x03, 0x61, 0x2f, 0x62],
   )
+  let wildcard_subscribe = expect_ok(
+    encode_subscribe({
+      topics: [
+        { topic: "sensors/+/temp", qos: QoS0 },
+        { topic: "devices/#", qos: QoS1 },
+      ],
+      message_id: 11,
+    }),
+  )
+  assert_true(wildcard_subscribe[0] == 0x82)
 }
 
 ///|
@@ -293,6 +303,21 @@ test "subscribe and unsubscribe decode packet bodies" {
     expect_err(decode_subscribe([0x82, 0x05, 0x00, 0x09, 0x00, 0x00, 0x00])).contains(
       "empty",
     ),
+  )
+  assert_true(
+    expect_err(
+      encode_subscribe({
+        topics: [{ topic: "sensor#", qos: QoS0 }],
+        message_id: 12,
+      }),
+    ).contains("wildcard"),
+  )
+  assert_true(
+    expect_err(
+      decode_subscribe([
+        0x82, 0x0a, 0x00, 0x0c, 0x00, 0x05, 0x61, 0x2f, 0x23, 0x2f, 0x62, 0x00,
+      ]),
+    ).contains("wildcard"),
   )
 }
 
