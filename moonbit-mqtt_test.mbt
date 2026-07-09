@@ -53,6 +53,21 @@ test "mqtt binary codec preserves non utf8 bytes" {
 }
 
 ///|
+test "packet framing helpers report complete packet length" {
+  assert_true(expect_ok(packet_total_length([0xc0, 0x00])) == 2)
+  assert_true(
+    expect_ok(packet_total_length([0x30, 0x03, 0x00, 0x01, 0x61, 0xff])) == 5,
+  )
+  assert_true(has_complete_packet([0xc0, 0x00]))
+  assert_true(!has_complete_packet([0x30, 0x03, 0x00, 0x01]))
+  assert_true(
+    expect_err(packet_total_length([0x30, 0x03, 0x00, 0x01])).contains(
+      "incomplete",
+    ),
+  )
+}
+
+///|
 test "connect encode matches MQTT 3.1.1 clean session packet" {
   let packet = expect_ok(
     encode_connect({

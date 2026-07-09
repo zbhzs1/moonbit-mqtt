@@ -76,7 +76,11 @@ pub fn encode_unsuback(Int) -> Result[Array[Byte], String]
 
 pub fn encode_unsubscribe(Unsubscribe) -> Result[Array[Byte], String]
 
+pub fn has_complete_packet(Array[Byte]) -> Bool
+
 pub fn is_pingresp(Array[Byte]) -> Bool
+
+pub fn packet_total_length(Array[Byte]) -> Result[Int, String]
 
 // Errors
 

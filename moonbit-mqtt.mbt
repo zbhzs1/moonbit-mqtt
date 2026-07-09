@@ -504,6 +504,28 @@ pub fn decode_fixed_header(bytes : Array[Byte]) -> Result[FixedHeader, String] {
 }
 
 ///|
+pub fn packet_total_length(bytes : Array[Byte]) -> Result[Int, String] {
+  let header = match decode_fixed_header(bytes) {
+    Ok(v) => v
+    Err(e) => return Err(e)
+  }
+  let total = header.header_len + header.remaining_length
+  if total > bytes.length() {
+    Err("packet framing: incomplete packet")
+  } else {
+    Ok(total)
+  }
+}
+
+///|
+pub fn has_complete_packet(bytes : Array[Byte]) -> Bool {
+  match packet_total_length(bytes) {
+    Ok(_) => true
+    Err(_) => false
+  }
+}
+
+///|
 fn append_fixed_header(
   packet : Array[Byte],
   msg_type : MessageType,
