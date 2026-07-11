@@ -1,0 +1,7 @@
+import {
+  "zbhzs1/moonbit-mqtt" @mqtt,
+}
+
+options(
+  "is-main": true,
+)
